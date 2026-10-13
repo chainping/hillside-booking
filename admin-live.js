@@ -298,14 +298,24 @@ function render() {
             reason: note || null
           });
 
-          if (error) {
-            alert('審核失敗：' + error.message);
-            actions.querySelectorAll('button').forEach(
-              el => el.disabled = false
-            );
-            $('listStatus').textContent = '審核失敗，資料未更新。';
-            return;
-          }
+         if (error) {
+  const isConflict =
+    error.code === '23P01' ||
+    error.message?.includes('approved_bookings_no_overlap');
+
+  const message = isConflict
+    ? '這間教室在所選時段已有其他核准預約，無法重複核准。請駁回此申請，或與申請人協調其他時段。'
+    : '審核失敗：' + error.message;
+
+  alert(message);
+
+  actions.querySelectorAll('button').forEach(
+    el => el.disabled = false
+  );
+
+  $('listStatus').textContent = '審核失敗，資料未更新。';
+  return;
+}
 
           await load();
         };
