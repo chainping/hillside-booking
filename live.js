@@ -2,6 +2,63 @@ import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const db=createClient('https://urgmjidcjrglyfgoohtx.supabase.co','sb_publishable_-PohQjs2ygBfe4XzAydbFA_Jht2vfwF',{auth:{detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
 const $=id=>document.getElementById(id);const form=$('bookingForm');let user=null;let lang='zh-TW';let policy=null;
 const names={a:'木地板 A',b:'木地板 B',stars:'群星室',e:'E 化教室'};
+
+/* 各場地飲食及白開水規範 */
+const roomNotice = document.createElement('p');
+roomNotice.id = 'roomNotice';
+roomNotice.setAttribute('role', 'status');
+roomNotice.style.margin = '8px 0 16px';
+roomNotice.style.fontWeight = '600';
+roomNotice.style.lineHeight = '1.7';
+
+form.elements.room_id.closest('label').after(roomNotice);
+
+async function updateRoomNotice() {
+  const roomId = form.elements.room_id.value;
+
+  if (!roomId) {
+    roomNotice.textContent = '';
+    return;
+  }
+
+  roomNotice.textContent = '正在讀取場地飲食規定…';
+
+  const { data, error } = await db
+    .from('rooms')
+    .select('food_allowed, water_allowed')
+    .eq('id', roomId)
+    .single();
+
+  if (form.elements.room_id.value !== roomId) return;
+
+  if (error || !data ||
+      data.food_allowed === null ||
+      data.water_allowed === null) {
+    roomNotice.textContent =
+      '無法確認場地飲食規定，請洽管理單位。';
+    return;
+  }
+
+  const food = data.food_allowed
+    ? '允許飲食'
+    : '禁止飲食';
+
+  const water = data.water_allowed
+    ? '允許飲用白開水'
+    : '禁止飲用白開水';
+
+  roomNotice.textContent =
+    `場地規定：${food}、${water}。` +
+    (data.food_allowed
+      ? '使用後請清理垃圾並恢復場地原狀。'
+      : '請勿在場地內食用食品或飲用未經允許的飲料。');
+}
+
+form.elements.room_id.addEventListener(
+  'change',
+  updateRoomNotice
+);
+
 const statuses={pending:'待審核',needs_info:'待補件',alternative_proposed:'建議替代時段',approved:'已核准',rejected:'未核准',cancelled:'已取消',completed:'已完成'};
 const enStatuses={pending:'Pending review',needs_info:'More information needed',alternative_proposed:'Alternative proposed',approved:'Approved',rejected:'Rejected',cancelled:'Cancelled',completed:'Completed'};
 const msg=(zh,en)=>lang==='zh-TW'?zh:en;
