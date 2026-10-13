@@ -26,7 +26,78 @@ function render(){if(!authorized)return;const counts={all:bookings.length,pendin
  const filter=$('filter').value,query=$('search').value.trim().toLocaleLowerCase();const list=bookings.filter(b=>(filter==='all'||(filter==='reviewable'?reviewable.has(b.status):b.status===filter))&&(!query||[b.applicant_name,b.activity_name,b.applicant_email,b.applicant_unit,b.room_id,names[b.room_id]].some(s=>String(s||'').toLocaleLowerCase().includes(query))));
  $('listStatus').textContent=`目前顯示 ${list.length} 筆申請。`;$('bookingList').replaceChildren();if(!list.length){$('bookingList').append(node('p','沒有符合條件的申請。','empty'));return;}
  for(const b of list){const card=document.createElement('article');card.className='booking-card';card.append(node('h3',`${names[b.room_id]||b.room_id} · ${short(b.activity_name)}`));card.append(node('span',labels[b.status]||b.status,`tag ${b.status}`));const info=document.createElement('div');info.className='meta';info.style.marginTop='14px';for(const [k,v] of [['借用開始',fmt(b.start_at)],['借用結束',fmt(b.end_at)],['申請人',b.applicant_name],['政大信箱',b.applicant_email],['身分',b.applicant_identity],['學號／職員編號',b.applicant_number],['電話',b.applicant_phone],['系所／單位',b.applicant_unit],['人數',b.attendee_count],['活動目的',b.purpose],['設備需求',b.equipment_needs],['特殊借用原因',b.special_reason],['申請時間',fmt(b.created_at)],['審核說明',b.review_reason],['審核時間',fmt(b.reviewed_at)],['申請編號',b.id]])field(info,k,v);card.append(info);
- if(reviewable.has(b.status)){const box=document.createElement('div');box.className='review-box';box.append(node('strong','審核操作'));const reason=document.createElement('textarea');reason.rows=2;reason.maxLength=2000;reason.placeholder='駁回或要求補件時，必須填寫原因；核准時可選填備註';reason.setAttribute('aria-label','審核原因');box.append(reason);const actions=document.createElement('div');actions.className='actions';for(const [decision,title] of [['approved','核准'],['needs_info','要求補件'],['rejected','駁回']]){const btn=node('button',title);btn.type='button';if(decision!=='approved')btn.className='outline';btn.onclick=async()=>{const note=reason.value.trim();if(decision!=='approved'&&!note){alert('請先填寫審核原因。');reason.focus();return;}if(!confirm(`確定要「${title}」這筆申請？\n${names[b.room_id]||b.room_id} · ${fmt(b.start_at)}\n此操作會立即寫入真實資料庫。`))return;actions.querySelectorAll('button').forEach(el=>el.disabled=true);$('listStatus').textContent='正在寫入審核結果…';const {error}=await db.rpc('review_booking',{booking_id:b.id,decision,reason:note||null});if(error){alert('審核失敗：'+error.message);actions.querySelectorAll('button').forEach(el=>el.disabled=false);$('listStatus').textContent='審核失敗，資料未更新。';return;}await load();};actions.append(btn);}box.append(actions);card.append(box);}else card.append(node('p','此申請目前不是可審核狀態。','private-notice'));
+ if(reviewable.has(b.status)){const box=document.createElement('div');box.className='review-box';box.append(node('strong','審核操作'));const reason=document.createElement('textarea');reason.rows=2;reason.maxLength=2000;reason.placeholder='駁回或要求補件時，必須填寫原因；核准時可選填備註';reason.setAttribute('aria-label','審核原因');box.append(reason);const actions=document.createElement('div');actions.className='actions';for(const [decision,title] of [['approved','核准'],['needs_info','要求補件'],['rejected','駁回']]){const btn=node('button',title);btn.type='button';if(decision!=='approved')btn.className='outline';btn.onclick=async()=>{const note=reason.value.trim();if(decision!=='approved'&&!note){alert('請先填寫審核原因。');reason.focus();return;}if(!confirm(`確定要「${title}」這筆申請？\n${names[b.room_id]||b.room_id} · ${fmt(b.start_at)}\n此操作會立即寫入真實資料庫。`))return;actions.querySelectorAll('button').forEach(el=>el.disabled=true);$('listStatus').textContent='正在寫入審核結果…';const {error}=await db.rpc('review_booking',{booking_id:b.id,decision,reason:note||null});if(error){alert('審核失敗：'+error.message);actions.querySelectorAll('button').forEach(el=>el.disabled=false);$('listStatus').textContent='審核失敗，資料未更新。';return;}await load();};actions.append(btn);}box.append(actions);card.append(box);}
+else if (
+  b.status === 'approved' &&
+  new Date(b.start_at).getTime() > Date.now()
+) {
+  const box = document.createElement('div');
+  box.className = 'review-box';
+
+  box.append(node('strong', '已核准預約管理'));
+
+  box.append(node(
+    'p',
+    '取消後會釋出預約時段，並排入 Google 日曆刪除任務。',
+    'private-notice'
+  ));
+
+  const actions = document.createElement('div');
+  actions.className = 'actions';
+
+  const btn = node('button', '取消預約', 'outline');
+  btn.type = 'button';
+  btn.style.borderColor = '#b42318';
+  btn.style.color = '#b42318';
+
+  btn.onclick = async () => {
+    const message =
+      `確定取消這筆預約嗎？\n\n` +
+      `場地：${names[b.room_id] || b.room_id}\n` +
+      `活動：${short(b.activity_name)}\n` +
+      `開始：${fmt(b.start_at)}\n` +
+      `結束：${fmt(b.end_at)}\n\n` +
+      `取消後會釋出時段，且無法直接復原。`;
+
+    if (!confirm(message)) return;
+
+    btn.disabled = true;
+    btn.textContent = '正在取消…';
+    $('listStatus').textContent = '正在取消預約…';
+
+    try {
+      const { error } = await db.rpc('cancel_booking', {
+        booking_id: b.id
+      });
+
+      if (error) throw error;
+
+      alert(
+        '預約已取消！Google 日曆刪除任務已排入佇列，' +
+        '待同步程式執行後才會移除日曆活動。'
+      );
+
+      await load();
+    } catch (error) {
+      alert('取消未完成：' + (error?.message || String(error)));
+      btn.disabled = false;
+      btn.textContent = '取消預約';
+      $('listStatus').textContent = '請確認預約狀態後再操作。';
+    }
+  };
+
+  actions.append(btn);
+  box.append(actions);
+  card.append(box);
+
+} else {
+  card.append(node(
+    'p',
+    '此申請目前不是可審核狀態。',
+    'private-notice'
+  ));
+}
+
  $('bookingList').append(card);}}
 $('filter').addEventListener('change',render);$('search').addEventListener('input',render);$('refresh').onclick=load;
 $('login').onclick=async()=>{const {error}=await db.auth.signInWithOAuth({provider:'google',options:{redirectTo:location.origin+location.pathname}});if(error)setAuth('登入失敗：'+error.message);};
