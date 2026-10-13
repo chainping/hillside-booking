@@ -464,6 +464,55 @@ async function loadBlocks() {
     }
 
     card.append(meta);
+    
+    // 解除場地停用
+    const actions = document.createElement('div');
+    actions.className = 'actions';
+    actions.style.marginTop = '16px';
+
+    const removeBtn = node('button', '解除停用', 'outline');
+    removeBtn.type = 'button';
+    removeBtn.style.borderColor = '#b42318';
+    removeBtn.style.color = '#b42318';
+
+    removeBtn.onclick = async () => {
+      const message =
+        `確定要解除這筆場地停用嗎？\n\n` +
+        `場地：${names[b.room_id] || b.room_id}\n` +
+        `開始：${fmt(b.start_at)}\n` +
+        `結束：${fmt(b.end_at)}\n` +
+        `原因：${short(b.internal_reason)}\n\n` +
+        '解除後，學生端將不再顯示這筆停用時段。';
+
+      if (!confirm(message)) return;
+
+      removeBtn.disabled = true;
+      removeBtn.textContent = '正在解除…';
+
+      try {
+        const { error } = await db.rpc('delete_room_block', {
+          p_block_id: b.id
+        });
+
+        if (error) throw error;
+
+        await loadBlocks();
+        alert('停用已解除！請重新整理學生端日曆確認。');
+
+      } catch (error) {
+        alert(
+          '解除失敗：' +
+          (error?.message || String(error))
+        );
+
+        removeBtn.disabled = false;
+        removeBtn.textContent = '解除停用';
+      }
+    };
+
+    actions.append(removeBtn);
+    card.append(actions);
+
     $('blockList').append(card);
   }
 }
