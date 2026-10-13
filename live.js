@@ -241,7 +241,16 @@ form.onsubmit = async e => {
   }
 
   // 檢查完成後才繼續執行原本的送出流程
-if(!user||!emailOK(user.email)){show('formstatus',msg('請先以政大帳號登入。','NCCU login required.'));return;}if(!policy){show('formstatus',msg('借用規範尚未載入。','Policy is not loaded.'));return;}const v=Object.fromEntries(new FormData(form));if(!v.start||!v.end||v.end<=v.start){show('formstatus',msg('結束時間必須晚於開始時間。','End time must be after start time.'));return;}const start=isoLocal(v.date,v.start),end=isoLocal(v.date,v.end);if((new Date(end)-new Date(start))>4*3600000){show('formstatus',msg('每次最多借用 4 小時。','Maximum 4 hours.'));return;}const d=new Date(v.date+'T12:00:00+08:00').getDay();const close=(d===1||d===5)?'17:00':'20:00';if(v.end>close&&!v.special_reason?.trim()){show('formstatus',msg('超出開館時段，請填寫特殊借用原因。','Please provide a reason for outside opening hours.'));return;}if(!form.elements.consent.checked){show('formstatus',msg('請先同意借用規範。','Please accept the policy.'));return;}const payload={applicant_name:v.applicant_name.trim(),applicant_identity:v.applicant_identity,applicant_number:v.applicant_number.trim(),applicant_phone:v.applicant_phone.trim(),applicant_unit:v.applicant_unit.trim(),room_id:v.room_id,activity_name:v.activity_name.trim(),purpose:v.purpose.trim(),attendee_count:Number(v.attendee_count),equipment_needs:v.equipment_needs?.trim()||null,start_at:start,end_at:end,special_reason:v.special_reason?.trim()||null,consent:true,language:lang};$('submit').disabled=true;show('formstatus',msg('正在送出至 Supabase…','Submitting to Supabase…'));try{submittingBooking = true;
+if(!user||!emailOK(user.email)){show('formstatus',msg('請先以政大帳號登入。','NCCU login required.'));return;}if(!policy){show('formstatus',msg('借用規範尚未載入。','Policy is not loaded.'));return;}const v=Object.fromEntries(new FormData(form));if(!v.start||!v.end||v.end<=v.start){show('formstatus',msg('結束時間必須晚於開始時間。','End time must be after start time.'));return;}const start=isoLocal(v.date,v.start),end=isoLocal(v.date,v.end);if((new Date(end)-new Date(start))>4*3600000){show('formstatus',msg('每次最多借用 4 小時。','Maximum 4 hours.'));return;}if (v.start < '10:00' || v.end > '21:00') {
+  show(
+    'formstatus',
+    msg(
+      '借用時間限 10:00–21:00。',
+      'Booking hours are 10:00–21:00.'
+    )
+  );
+  return;
+}if(!form.elements.consent.checked){show('formstatus',msg('請先同意借用規範。','Please accept the policy.'));return;}const payload={applicant_name:v.applicant_name.trim(),applicant_identity:v.applicant_identity,applicant_number:v.applicant_number.trim(),applicant_phone:v.applicant_phone.trim(),applicant_unit:v.applicant_unit.trim(),room_id:v.room_id,activity_name:v.activity_name.trim(),purpose:v.purpose.trim(),attendee_count:Number(v.attendee_count),equipment_needs:v.equipment_needs?.trim()||null,start_at:start,end_at:end,special_reason:v.special_reason?.trim()||null,consent:true,language:lang};$('submit').disabled=true;show('formstatus',msg('正在送出至 Supabase…','Submitting to Supabase…'));try{submittingBooking = true;
 const {data,error}=await db.rpc('submit_booking',{payload});if(error)throw error;show('formstatus',msg(`已送出申請！編號：${data}。目前狀態：待審核（非核准）。`,`Submitted! ID: ${data}. Status: pending (not approved).`));form.reset();$('email').value=user.email;await loadMine();await loadSchedule();}catch(error){show('formstatus',msg('送出失敗：','Submission failed: ')+error.message);}finally{
   submittingBooking = false;
   render();
