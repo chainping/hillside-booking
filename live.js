@@ -38,6 +38,131 @@ document.querySelectorAll('[data-room]').forEach(box=>box.addEventListener('chan
 $('allRooms').addEventListener('change',e=>{document.querySelectorAll('[data-room]').forEach(box=>box.checked=e.target.checked);paintCalendar();});
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadSchedule();});
 window.addEventListener('focus',()=>{if(!document.hidden)loadSchedule();});
+
+/* 即時檢查場地借用時段 */
+let conflictCheckVersion = 0;
+let timeConflict = false;
+let checkingConflict = false;
+
+const conflictHint = document.createElement('p');
+conflictHint.id = 'conflictHint';
+conflictHint.setAttribute('role', 'status');
+conflictHint.setAttribute('aria-live', 'polite');
+conflictHint.style.margin = '12px 0';
+conflictHint.style.fontWeight = '600';
+
+$('submit').before(conflictHint);
+
+function updateConflictButton() {
+  const validUser = user && emailOK(user.email);
+
+  $('submit').disabled =
+    !validUser || timeConflict || checkingConflict;
+}
+
+async function checkBookingConflict() {
+  const version = ++conflictCheckVersion;
+
+  const room = form.elements.room_id.value;
+  const date = form.elements.date.value;
+  const start = form.elements.start.value;
+  const end = form.elements.end.value;
+
+  timeConflict = false;
+  checkingConflict = false;
+  conflictHint.textContent = '';
+  updateConflictButton();
+
+  if (!room || !date || !start || !end) return;
+
+  if (end <= start) {
+    timeConflict = true;
+    conflictHint.textContent =
+      msg('結束時間必須晚於開始時間。',
+          'End time must be after start time.');
+    conflictHint.style.color = '#b42318';
+    updateConflictButton();
+    return;
+  }
+
+  checkingConflict = true;
+  conflictHint.textContent =
+    msg('正在檢查場地時段…', 'Checking availability…');
+  conflictHint.style.color = '#666';
+  updateConflictButton();
+
+  try {
+    const from = isoLocal(date, '00:00');
+
+    const nextDay = new Date(
+      new Date(from).getTime() + 24 * 60 * 60 * 1000
+    ).toISOString();
+
+    const { data, error } = await db.rpc('public_schedule', {
+      from_time: from,
+      to_time: nextDay
+    });
+
+    if (version !== conflictCheckVersion) return;
+    if (error) throw error;
+
+    const requestedStart = new Date(isoLocal(date, start));
+    const requestedEnd = new Date(isoLocal(date, end));
+
+    const conflicts = (data || []).filter(item =>
+      item.room_id === room &&
+      new Date(item.start_at) < requestedEnd &&
+      new Date(item.end_at) > requestedStart
+    );
+
+    timeConflict = conflicts.length > 0;
+
+    if (timeConflict) {
+      conflictHint.textContent = msg(
+        '此時段已被借用或不開放借用，請重新選擇時間。',
+        'This time is booked or unavailable. Please choose another time.'
+      );
+      conflictHint.style.color = '#b42318';
+    } else {
+      conflictHint.textContent = msg(
+        '此時段目前沒有已核准預約或停用紀錄，仍須經管理員審核。',
+        'No approved booking or closure found. Approval is still required.'
+      );
+      conflictHint.style.color = '#35745c';
+    }
+
+  } catch (error) {
+    if (version !== conflictCheckVersion) return;
+
+    // 無法確認時，不允許直接送出
+    timeConflict = true;
+    conflictHint.textContent = msg(
+      '目前無法確認場地時段，請稍後重試。' + error.message,
+      'Unable to check availability. Please retry. ' + error.message
+    );
+    conflictHint.style.color = '#b42318';
+
+  } finally {
+    if (version === conflictCheckVersion) {
+      checkingConflict = false;
+      updateConflictButton();
+    }
+  }
+}
+
+// 選擇場地、日期、開始或結束時間時，立即檢查
+for (const key of ['room_id', 'date', 'start', 'end']) {
+  form.elements[key].addEventListener(
+    'change',
+    checkBookingConflict
+  );
+}
+
+// 登入狀態變化時，重新套用按鈕狀態
+db.auth.onAuthStateChange(() => {
+  setTimeout(updateConflictButton, 0);
+});
+
 form.onsubmit=async e=>{e.preventDefault();if(!user||!emailOK(user.email)){show('formstatus',msg('請先以政大帳號登入。','NCCU login required.'));return;}if(!policy){show('formstatus',msg('借用規範尚未載入。','Policy is not loaded.'));return;}const v=Object.fromEntries(new FormData(form));if(!v.start||!v.end||v.end<=v.start){show('formstatus',msg('結束時間必須晚於開始時間。','End time must be after start time.'));return;}const start=isoLocal(v.date,v.start),end=isoLocal(v.date,v.end);if((new Date(end)-new Date(start))>4*3600000){show('formstatus',msg('每次最多借用 4 小時。','Maximum 4 hours.'));return;}const d=new Date(v.date+'T12:00:00+08:00').getDay();const close=(d===1||d===5)?'17:00':'20:00';if(v.end>close&&!v.special_reason?.trim()){show('formstatus',msg('超出開館時段，請填寫特殊借用原因。','Please provide a reason for outside opening hours.'));return;}if(!form.elements.consent.checked){show('formstatus',msg('請先同意借用規範。','Please accept the policy.'));return;}const payload={applicant_name:v.applicant_name.trim(),applicant_identity:v.applicant_identity,applicant_number:v.applicant_number.trim(),applicant_phone:v.applicant_phone.trim(),applicant_unit:v.applicant_unit.trim(),room_id:v.room_id,activity_name:v.activity_name.trim(),purpose:v.purpose.trim(),attendee_count:Number(v.attendee_count),equipment_needs:v.equipment_needs?.trim()||null,start_at:start,end_at:end,special_reason:v.special_reason?.trim()||null,consent:true,language:lang};$('submit').disabled=true;show('formstatus',msg('正在送出至 Supabase…','Submitting to Supabase…'));try{const {data,error}=await db.rpc('submit_booking',{payload});if(error)throw error;show('formstatus',msg(`已送出申請！編號：${data}。目前狀態：待審核（非核准）。`,`Submitted! ID: ${data}. Status: pending (not approved).`));form.reset();$('email').value=user.email;await loadMine();await loadSchedule();}catch(error){show('formstatus',msg('送出失敗：','Submission failed: ')+error.message);}finally{render();}};
 async function loadMine(){if(!user)return;show('mineResult',msg('讀取中…','Loading…'));const {data,error}=await db.from('bookings').select('id,room_id,activity_name,start_at,end_at,status,review_reason,created_at').eq('applicant_id',user.id).order('created_at',{ascending:false}).limit(100);if(error){show('mineResult',msg('讀取失敗：','Failed to load: ')+error.message);return;}const root=$('mineResult');root.replaceChildren();if(!data?.length){root.textContent=msg('目前沒有申請紀錄。','No bookings yet.');return;}for(const b of data){const div=document.createElement('div');div.className='entry';div.append(node('strong',`${names[b.room_id]||b.room_id} · ${b.activity_name}`),node('div',`${fmt(b.start_at)} — ${fmt(b.end_at)}`),node('div',msg('狀態：','Status: ')+(lang==='zh-TW'?statuses[b.status]:enStatuses[b.status]||b.status)));if(b.review_reason)div.append(node('div',msg('審核說明：','Review note: ')+b.review_reason));if(['pending','needs_info','alternative_proposed','approved'].includes(b.status)&&new Date(b.start_at)>new Date()){const btn=node('button',msg('取消申請','Cancel booking'));btn.type='button';btn.onclick=async()=>{if(!confirm(msg('確定要取消這筆申請嗎？','Cancel this booking?')))return;btn.disabled=true;const {error}=await db.rpc('cancel_booking',{booking_id:b.id});if(error){alert(error.message);btn.disabled=false;}else await loadMine();};div.append(btn);}root.append(div);}}
 $('refreshMine').onclick=loadMine;
