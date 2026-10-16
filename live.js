@@ -108,6 +108,46 @@ $('allRooms').addEventListener('change',e=>{document.querySelectorAll('[data-roo
 document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadSchedule();});
 window.addEventListener('focus',()=>{if(!document.hidden)loadSchedule();});
 
+// Student-side date eligibility mirrors the database's 3-working-day / 14-calendar-day rule.
+let dateRules=[],dateRulesReady=false,dateRulesLoading=null;
+const datePlus=(date,days)=>{const d=new Date(date+'T12:00:00Z');d.setUTCDate(d.getUTCDate()+days);return d.toISOString().slice(0,10);};
+async function loadDateRules(){
+  const today=todayTW(),last=datePlus(today,14);
+  dateRulesReady=false;
+  dateRulesLoading=(async()=>{
+    const {data,error}=await db.from('calendar_days').select('day,is_workday').gte('day',today).lte('day',last);
+    if(error||!Array.isArray(data)||data.length!==15){dateRules=[];dateRulesReady=false;return;}
+    dateRules=data;dateRulesReady=true;
+  })();
+  await dateRulesLoading;
+  if(form.elements.date.value)checkBookingConflict();
+}
+function dateEligibility(date){
+  if(!date)return '';
+  const today=todayTW(),last=datePlus(today,14);
+  if(date<=today)return msg('請選擇未來的借用日期。','Please select a future booking date.');
+  if(date>last)return msg('最多可預約未來 14 個日曆天。','Bookings are limited to the next 14 calendar days.');
+  if(isWeekend(date))return msg('週末不開放借用。','Bookings are unavailable on weekends.');
+  if(!dateRulesReady)return msg('無法確認工作日曆，請稍後重試。','Unable to verify the working-day calendar. Please retry.');
+  const record=dateRules.find(d=>d.day===date);
+  if(!record)return msg('目前沒有此日期的工作日資料，請洽管理單位。','No working-day information for this date. Please contact the center.');
+  if(record.is_workday!==true)return msg('所選日期為國定假日或非工作日，不開放借用。','The selected date is a holiday or non-working day.');
+  const count=dateRules.filter(d=>d.day>today&&d.day<=date&&!isWeekend(d.day)&&d.is_workday===true).length;
+  if(count<3)return msg('至少須提前 3 個工作天申請，請選擇更晚的日期。','Please apply at least 3 working days in advance.');
+  return '';
+}
+const dateHint=document.createElement('p');
+dateHint.id='bookingDateHint';dateHint.setAttribute('role','status');dateHint.style.margin='6px 0 12px';dateHint.style.fontWeight='600';
+form.elements.date.closest('label').after(dateHint);
+function updateDateHint(){
+  const date=form.elements.date.value;
+  const issue=dateEligibility(date);
+  dateHint.textContent=issue||(!date?msg('請選擇符合提前 3 個工作天規定的日期。','Select a date at least 3 working days ahead.'):msg('日期符合提前申請規定，仍須確認場地時段。','Date meets the advance notice rule; room availability must still be checked.'));
+  dateHint.style.color=issue?'#b42318':'#35745c';
+  return issue;
+}
+loadDateRules();
+document.addEventListener('visibilitychange',()=>{if(!document.hidden)loadDateRules();});
 /* 即時檢查場地借用時段 */
 let conflictCheckVersion = 0;
 let timeConflict = false;
@@ -126,7 +166,7 @@ function updateConflictButton() {
   const validUser = user && emailOK(user.email);
 
   $('submit').disabled =
-    !validUser || timeConflict || checkingConflict;
+    !validUser || timeConflict || checkingConflict || !dateRulesReady || !!dateEligibility(form.elements.date.value);
 }
 
 async function checkBookingConflict() {
@@ -140,9 +180,11 @@ async function checkBookingConflict() {
   timeConflict = false;
   checkingConflict = false;
   conflictHint.textContent = '';
+  const dateIssue=updateDateHint();
+  if(dateIssue){timeConflict=true;conflictHint.textContent=dateIssue;conflictHint.style.color='#b42318';}
   updateConflictButton();
 
-  if (!room || !date || !start || !end) return;
+  if(dateIssue || !room || !date || !start || !end) return;
 
   if (end <= start) {
     timeConflict = true;
@@ -269,7 +311,8 @@ form.onsubmit = async e => {
   // 避免重複點擊送出
   if (submittingBooking) return;
 
-  // 送出前再次查詢最新場地時段
+  // 送出前重新讀取工作日曆及確認最新場地時段
+  await loadDateRules();
   await checkBookingConflict();
 
   if (timeConflict || checkingConflict) {
