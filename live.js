@@ -1,7 +1,7 @@
 import { createClient } from 'https://esm.sh/@supabase/supabase-js@2';
 const db=createClient('https://urgmjidcjrglyfgoohtx.supabase.co','sb_publishable_-PohQjs2ygBfe4XzAydbFA_Jht2vfwF',{auth:{detectSessionInUrl:true,persistSession:true,autoRefreshToken:true}});
-const $=id=>document.getElementById(id);const form=$('bookingForm');let user=null;let lang='zh-TW';let policy=null;
-const names={a:'木地板 A',b:'木地板 B',stars:'群星室',e:'E 化教室'};
+const $=id=>document.getElementById(id);const form=$('bookingForm');let user=null;let lang=localStorage.getItem('hillside-language')==='en'?'en':'zh-TW';let policy=null;
+const names={a:'木地板 A',b:'木地板 B',stars:'群星室',e:'E 化教室'};const englishNames={a:'Wood-floor Room A',b:'Wood-floor Room B',stars:'Star Room',e:'E-classroom'};const roomName=id=>(lang==='zh-TW'?names:englishNames)[id]||id;
 
 /* 各場地飲食及白開水規範 */
 const roomNotice = document.createElement('p');
@@ -21,7 +21,7 @@ async function updateRoomNotice() {
     return;
   }
 
-  roomNotice.textContent = '正在讀取場地飲食規定…';
+  roomNotice.textContent = msg('正在讀取場地飲食規定…','Loading room food and drink rules…');
 
   const { data, error } = await db
     .from('rooms')
@@ -35,23 +35,23 @@ async function updateRoomNotice() {
       data.food_allowed === null ||
       data.water_allowed === null) {
     roomNotice.textContent =
-      '無法確認場地飲食規定，請洽管理單位。';
+      msg('無法確認場地飲食規定，請洽管理單位。','Unable to confirm room food and drink rules. Please contact the center.');
     return;
   }
 
   const food = data.food_allowed
-    ? '允許飲食'
-    : '禁止飲食';
+    ? msg('允許飲食','Food and drinks allowed')
+    : msg('禁止飲食','No food or drinks');
 
   const water = data.water_allowed
-    ? '允許飲用白開水'
-    : '禁止飲用白開水';
+    ? msg('允許飲用白開水','Plain water allowed')
+    : msg('禁止飲用白開水','No plain water');
 
   roomNotice.textContent =
-    `場地規定：${food}、${water}。` +
+    msg(`場地規定：${food}、${water}。`, `Room rules: ${food}; ${water}. `) +
     (data.food_allowed
-      ? '使用後請清理垃圾並恢復場地原狀。'
-      : '請勿在場地內食用食品或飲用未經允許的飲料。');
+      ? msg('使用後請清理垃圾並恢復場地原狀。','Please clean up and restore the room after use.')
+      : msg('請勿在場地內食用食品或飲用未經允許的飲料。','Do not consume food or unauthorized drinks in this room.'));
 }
 
 form.elements.room_id.addEventListener(
@@ -62,6 +62,7 @@ form.elements.room_id.addEventListener(
 const statuses={pending:'待審核',needs_info:'待補件',alternative_proposed:'建議替代時段',approved:'已核准',rejected:'未核准',cancelled:'已取消',completed:'已完成'};
 const enStatuses={pending:'Pending review',needs_info:'More information needed',alternative_proposed:'Alternative proposed',approved:'Approved',rejected:'Rejected',cancelled:'Cancelled',completed:'Completed'};
 const msg=(zh,en)=>lang==='zh-TW'?zh:en;
+function applyStaticLanguage(){document.documentElement.lang=lang==='zh-TW'?'zh-Hant':'en';$('lang').textContent=lang==='zh-TW'?'EN':'中文';document.querySelectorAll('[data-zh]').forEach(el=>el.textContent=el.dataset[lang==='zh-TW'?'zh':'en']);document.querySelectorAll('[data-zh-placeholder]').forEach(el=>el.placeholder=el.dataset[lang==='zh-TW'?'zhPlaceholder':'enPlaceholder']);}
 function show(id,s){$(id).textContent=s;}
 function emailOK(email){return /^[^@\s]+@(?:[a-z0-9-]+\.)*nccu\.edu\.tw$/i.test(email||'');}
 function isoLocal(date,time){return new Date(`${date}T${time}:00+08:00`).toISOString();}
@@ -82,10 +83,10 @@ let calendarMonth=todayTW().slice(0,7), selectedDay=todayTW(), monthEvents=[], s
 const selectedRooms=()=>Array.from(document.querySelectorAll('[data-room]:checked'),e=>e.dataset.room);
 const monthDate=(ym,day)=>`${ym}-${pad(day)}`;
 function changeMonth(delta){const [y,m]=calendarMonth.split('-').map(Number);const d=new Date(Date.UTC(y,m-1+delta,1));calendarMonth=`${d.getUTCFullYear()}-${pad(d.getUTCMonth()+1)}`;selectedDay=monthDate(calendarMonth,1);loadSchedule();}
-function paintCalendar(){const [year,month]=calendarMonth.split('-').map(Number);const days=new Date(Date.UTC(year,month,0)).getUTCDate();const offset=new Date(Date.UTC(year,month-1,1)).getUTCDay();const selected=new Set(selectedRooms());$('monthTitle').textContent=msg(`${year} 年 ${month} 月`,`${new Date(Date.UTC(year,month-1,1)).toLocaleDateString('en-US',{year:'numeric',month:'long',timeZone:'UTC'})}`);$('calendarWeekdays').replaceChildren(...(lang==='zh-TW'?['日','一','二','三','四','五','六']:['Sun','Mon','Tue','Wed','Thu','Fri','Sat']).map(t=>node('span',t)));const grid=$('calendarGrid');grid.replaceChildren();for(let i=0;i<offset;i++){const empty=node('div','');empty.className='calendar-empty';grid.append(empty);}for(let day=1;day<=days;day++){const date=monthDate(calendarMonth,day);const cell=document.createElement('button');cell.type='button';cell.className='calendar-day'+(selectedDay===date?' active':'')+(date===todayTW()?' is-today':'');cell.setAttribute('aria-label',date);cell.setAttribute('aria-pressed',String(selectedDay===date));cell.append(node('span',String(day)));const dots=document.createElement('div');dots.className='calendar-dots';for(const room of Object.keys(names)){if(monthEvents.some(e=>selected.has(room)&&e.room_id===room&&eventLocalDate(e)===date)){const dot=document.createElement('span');dot.className='room-dot';dot.style.setProperty('--room-color',roomColors[room]);dot.title=names[room];dots.append(dot);}}cell.append(dots);cell.onclick=()=>{selectedDay=date;paintCalendar();paintDay();};grid.append(cell);}paintDay();}
+function paintCalendar(){const [year,month]=calendarMonth.split('-').map(Number);const days=new Date(Date.UTC(year,month,0)).getUTCDate();const offset=new Date(Date.UTC(year,month-1,1)).getUTCDay();const selected=new Set(selectedRooms());$('monthTitle').textContent=msg(`${year} 年 ${month} 月`,`${new Date(Date.UTC(year,month-1,1)).toLocaleDateString('en-US',{year:'numeric',month:'long',timeZone:'UTC'})}`);$('calendarWeekdays').replaceChildren(...(lang==='zh-TW'?['日','一','二','三','四','五','六']:['Sun','Mon','Tue','Wed','Thu','Fri','Sat']).map(t=>node('span',t)));const grid=$('calendarGrid');grid.replaceChildren();for(let i=0;i<offset;i++){const empty=node('div','');empty.className='calendar-empty';grid.append(empty);}for(let day=1;day<=days;day++){const date=monthDate(calendarMonth,day);const cell=document.createElement('button');cell.type='button';cell.className='calendar-day'+(selectedDay===date?' active':'')+(date===todayTW()?' is-today':'');cell.setAttribute('aria-label',date);cell.setAttribute('aria-pressed',String(selectedDay===date));cell.append(node('span',String(day)));const dots=document.createElement('div');dots.className='calendar-dots';for(const room of Object.keys(names)){if(monthEvents.some(e=>selected.has(room)&&e.room_id===room&&eventLocalDate(e)===date)){const dot=document.createElement('span');dot.className='room-dot';dot.style.setProperty('--room-color',roomColors[room]);dot.title=roomName(room);dots.append(dot);}}cell.append(dots);cell.onclick=()=>{selectedDay=date;paintCalendar();paintDay();};grid.append(cell);}paintDay();}
 function eventLocalDate(e){return new Intl.DateTimeFormat('en-CA',{timeZone:'Asia/Taipei',year:'numeric',month:'2-digit',day:'2-digit'}).format(new Date(e.start_at));}
 function localTime(s){return new Intl.DateTimeFormat(lang==='zh-TW'?'zh-TW':'en-US',{timeZone:'Asia/Taipei',hour:'2-digit',minute:'2-digit',hour12:false}).format(new Date(s));}
-function paintDay(){const selected=new Set(selectedRooms());$('dayTitle').textContent=msg(`${selectedDay.replaceAll('-','/')}｜借用時段`,`${selectedDay} | Reservations`);const root=$('scheduleResult');root.replaceChildren();if(!selected.size){root.textContent=msg('請至少勾選一間場地。','Select at least one room.');return;}if(loadedMonth!==calendarMonth){root.textContent=msg('正在讀取資料…','Loading…');return;}const entries=monthEvents.filter(e=>selected.has(e.room_id)&&eventLocalDate(e)===selectedDay).sort((a,b)=>a.start_at.localeCompare(b.start_at));if(!entries.length){root.textContent=msg('所選場地當日沒有已核准或停用時段；申請仍須經管理員審核。','No approved bookings or blocked times for selected rooms on this date; approval is still required.');return;}for(const e of entries){const row=document.createElement('div');row.className='calendar-entry';const dot=document.createElement('span');dot.className='room-dot';dot.style.setProperty('--room-color',roomColors[e.room_id]||'#888');row.append(dot,node('strong',names[e.room_id]||e.room_id),node('span',`${localTime(e.start_at)}–${localTime(e.end_at)}`),node('span',e.label==='已借用'?msg('已借用','Booked'):msg('不開放借用','Unavailable')));root.append(row);}}
+function paintDay(){const selected=new Set(selectedRooms());$('dayTitle').textContent=msg(`${selectedDay.replaceAll('-','/')}｜借用時段`,`${selectedDay} | Reservations`);const root=$('scheduleResult');root.replaceChildren();if(!selected.size){root.textContent=msg('請至少勾選一間場地。','Select at least one room.');return;}if(loadedMonth!==calendarMonth){root.textContent=msg('正在讀取資料…','Loading…');return;}const entries=monthEvents.filter(e=>selected.has(e.room_id)&&eventLocalDate(e)===selectedDay).sort((a,b)=>a.start_at.localeCompare(b.start_at));if(!entries.length){root.textContent=msg('所選場地當日沒有已核准或停用時段；申請仍須經管理員審核。','No approved bookings or blocked times for selected rooms on this date; approval is still required.');return;}for(const e of entries){const row=document.createElement('div');row.className='calendar-entry';const dot=document.createElement('span');dot.className='room-dot';dot.style.setProperty('--room-color',roomColors[e.room_id]||'#888');row.append(dot,node('strong',roomName(e.room_id)),node('span',`${localTime(e.start_at)}–${localTime(e.end_at)}`),node('span',e.label==='已借用'?msg('已借用','Booked'):msg('不開放借用','Unavailable')));root.append(row);}}
 async function loadSchedule(){const current=++scheduleSeq,month=calendarMonth;loadedMonth='';$('calendarStatus').textContent=msg('正在更新月曆…','Updating calendar…');paintCalendar();const [year,m]=month.split('-').map(Number);const next=new Date(Date.UTC(year,m,1));const nextMonth=`${next.getUTCFullYear()}-${pad(next.getUTCMonth()+1)}`;const from=isoLocal(`${month}-01`,'00:00'),to=isoLocal(`${nextMonth}-01`,'00:00');const {data,error}=await db.rpc('public_schedule',{from_time:from,to_time:to});if(current!==scheduleSeq)return;if(error){$('calendarStatus').textContent=msg('月曆讀取失敗：','Calendar error: ')+error.message;$('scheduleResult').textContent=msg('無法取得借用時段，請重新整理。','Unable to load bookings. Please retry.');return;}monthEvents=Array.isArray(data)?data:[];loadedMonth=month;$('calendarStatus').textContent=msg('色點代表該日有已借用或停用時段；點選日期查看詳細時間。','Colored dots indicate reserved or blocked times; select a date for details.');paintCalendar();}
 $('prevMonth').onclick=()=>changeMonth(-1);
 $('nextMonth').onclick=()=>changeMonth(1);
@@ -285,10 +286,11 @@ const {data,error}=await db.rpc('submit_booking',{payload});if(error)throw error
 }};
 async function loadMine(){if(!user)return;show('mineResult',msg('讀取中…','Loading…'));const {data,error}=await db.from('bookings').select('id,room_id,activity_name,start_at,end_at,status,review_reason,created_at').eq('applicant_id',user.id).order('created_at',{ascending:false}).limit(100);if(error){show('mineResult',msg('讀取失敗：','Failed to load: ')+error.message);return;}const root=$('mineResult');root.replaceChildren();if(!data?.length){root.textContent=msg('目前沒有申請紀錄。','No bookings yet.');return;}for(const b of data){const div=document.createElement('div');div.className='entry';div.append(node('strong',`${names[b.room_id]||b.room_id} · ${b.activity_name}`),node('div',`${fmt(b.start_at)} — ${fmt(b.end_at)}`),node('div',msg('狀態：','Status: ')+(lang==='zh-TW'?statuses[b.status]:enStatuses[b.status]||b.status)));if(b.review_reason)div.append(node('div',msg('審核說明：','Review note: ')+b.review_reason));if(['pending','needs_info','alternative_proposed','approved'].includes(b.status)&&new Date(b.start_at)>new Date()){const btn=node('button',msg('取消申請','Cancel booking'));btn.type='button';btn.onclick=async()=>{if(!confirm(msg('確定要取消這筆申請嗎？','Cancel this booking?')))return;btn.disabled=true;const {error}=await db.rpc('cancel_booking',{booking_id:b.id});if(error){alert(error.message);btn.disabled=false;}else await loadMine();};div.append(btn);}root.append(div);}}
 $('refreshMine').onclick=loadMine;
-$('lang').onclick=()=>{lang=lang==='zh-TW'?'en':'zh-TW';$('lang').textContent=lang==='zh-TW'?'EN':'中文';document.documentElement.lang=lang==='zh-TW'?'zh-Hant':'en';document.querySelectorAll('[data-zh]').forEach(el=>el.textContent=el.dataset[lang==='zh-TW'?'zh':'en']);document.querySelectorAll('[data-zh-placeholder]').forEach(el=>el.placeholder=el.dataset[lang==='zh-TW'?'zhPlaceholder':'enPlaceholder']);const texts={notice:['系統測試中：申請與審核資料已連接 Supabase，Google Calendar 同步及通知尚未完成。送出申請不代表核准。','TEST SYSTEM: Applications and reviews are connected to Supabase. Google Calendar sync and notifications are not yet available. Submission is not approval.'],headline:['留一段時間，給自在學習的空間。','A space to learn, on your own terms.'],intro:['政大 Google 登入 · 雲端預約申請 · 查詢個人紀錄','NCCU Google login · Online applications · My bookings'],scheduleTitle:['場地借用時段','Room availability'],scheduleHint:['僅顯示已核准與停用時段，不顯示其他人的申請資料。','Only approved reservations and room blocks are visible.'],allRoomsText:['全部場地','All rooms'],applyTitle:['申請借用','Apply for a room'],
+$('lang').onclick=()=>{lang=lang==='zh-TW'?'en':'zh-TW';localStorage.setItem('hillside-language',lang==='zh-TW'?'zh':'en');applyStaticLanguage();const texts={notice:['系統測試中：申請與審核資料已連接 Supabase，Google Calendar 同步及通知尚未完成。送出申請不代表核准。','TEST SYSTEM: Applications and reviews are connected to Supabase. Google Calendar sync and notifications are not yet available. Submission is not approval.'],headline:['留一段時間，給自在學習的空間。','A space to learn, on your own terms.'],intro:['政大 Google 登入 · 雲端預約申請 · 查詢個人紀錄','NCCU Google login · Online applications · My bookings'],scheduleTitle:['場地借用時段','Room availability'],scheduleHint:['僅顯示已核准與停用時段，不顯示其他人的申請資料。','Only approved reservations and room blocks are visible.'],allRoomsText:['全部場地','All rooms'],applyTitle:['申請借用','Apply for a room'],
 applyHint:[
   '限政大信箱登入；借用須至少提前 3 個工作天，最多可預約未來 30 個日曆天。借用時間 10:00–21:00，每次最多 4 小時，以 30 分鐘為單位。所有申請均須審核。',
   'NCCU login required. Apply at least 3 working days ahead, up to 30 calendar days in advance. Booking hours: 10:00–21:00. Maximum 4 hours per booking, in 30-minute increments. All applications require approval.'
 ],
-};for(const [id,arr] of Object.entries(texts))$(id).textContent=arr[lang==='zh-TW'?0:1];makeTimes();loadPolicy();render();loadSchedule();};
+};for(const [id,arr] of Object.entries(texts))$(id).textContent=arr[lang==='zh-TW'?0:1];makeTimes();updateRoomNotice();loadPolicy();render();loadSchedule();};
+applyStaticLanguage();
 makeTimes();form.elements.date.min=todayTW();loadPolicy();loadSchedule();check();
