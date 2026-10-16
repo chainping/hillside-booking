@@ -120,6 +120,8 @@ async function loadDateRules(){
     dateRules=data;dateRulesReady=true;
   })();
   await dateRulesLoading;
+  updateDateHint();
+  updateConflictButton();
   if(form.elements.date.value)checkBookingConflict();
 }
 function dateEligibility(date){
@@ -315,7 +317,7 @@ form.onsubmit = async e => {
   await loadDateRules();
   await checkBookingConflict();
 
-  if (timeConflict || checkingConflict) {
+  if (timeConflict || checkingConflict || !dateRulesReady || !!dateEligibility(form.elements.date.value)) {
     show('formstatus', msg(
       '所選時段不可借用，或目前無法確認場地狀態，請重新選擇時間。',
       'The selected time is unavailable or could not be verified.'
@@ -334,7 +336,7 @@ if(!user||!emailOK(user.email)){show('formstatus',msg('請先以政大帳號登�
   );
   return;
 }if(!form.elements.consent.checked){show('formstatus',msg('請先同意借用規範。','Please accept the policy.'));return;}const payload={applicant_name:v.applicant_name.trim(),applicant_identity:v.applicant_identity,applicant_number:v.applicant_number.trim(),applicant_phone:v.applicant_phone.trim(),applicant_unit:v.applicant_unit.trim(),room_id:v.room_id,activity_name:v.activity_name.trim(),purpose:v.purpose.trim(),attendee_count:Number(v.attendee_count),equipment_needs:v.equipment_needs?.trim()||null,start_at:start,end_at:end,special_reason:v.special_reason?.trim()||null,consent:true,language:lang};$('submit').disabled=true;show('formstatus',msg('正在送出至 Supabase…','Submitting to Supabase…'));try{submittingBooking = true;
-const {data,error}=await db.rpc('submit_booking',{payload});if(error)throw error;show('formstatus',msg(`申請已成功送出！申請編號：${data}。目前為「待審核」，尚未核准；可至「我的申請」查看進度。`,`Booking request submitted! Reference: ${data}. Status: Pending review (not approved). Check My Bookings for updates.`));form.reset();$('email').value=user.email;await loadMine();await loadSchedule();}catch(error){show('formstatus',bookingErrorMessage(error));}finally{
+const {data,error}=await db.rpc('submit_booking',{payload});if(error)throw error;show('formstatus',msg(`申請已成功送出！申請編號：${data}。目前為「待審核」，尚未核准；可至「我的申請」查看進度。`,`Booking request submitted! Reference: ${data}. Status: Pending review (not approved). Check My Bookings for updates.`));form.reset();updateDateHint();$('email').value=user.email;await loadMine();await loadSchedule();}catch(error){show('formstatus',bookingErrorMessage(error));}finally{
   submittingBooking = false;
   render();
 }};
