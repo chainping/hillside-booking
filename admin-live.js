@@ -337,7 +337,7 @@ function render() {
 
       box.append(node(
         'p',
-        '取消後會釋出預約時段，並排入 Google 日曆刪除任務。',
+        '取消後會釋出預約時段；Google 日曆是否完成同步，請另行確認。',
         'private-notice'
       ));
 
@@ -372,8 +372,7 @@ function render() {
           if (error) throw error;
 
           alert(
-            '預約已取消！Google 日曆刪除任務已排入佇列，' +
-            '待同步程式執行後才會移除日曆活動。'
+            '預約已取消！請另行確認 Google 日曆活動是否同步移除。'
           );
 
           await load();
