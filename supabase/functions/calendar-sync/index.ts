@@ -1,6 +1,6 @@
 // Supabase Edge Function: deploy as calendar-sync; call on a schedule with a secret header.
 // Required secrets: SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, GOOGLE_SERVICE_ACCOUNT_JSON,
-// GOOGLE_CALENDAR_ID, CALENDAR_SYNC_SECRET.
+// GOOGLE_CALENDAR_ID, GOOGLE_CALENDAR_STARS_ID, GOOGLE_CALENDAR_E_ID, CALENDAR_SYNC_SECRET.
 import { createClient } from 'npm:@supabase/supabase-js@2';
 const enc = new TextEncoder();
 const base64url = (bytes: Uint8Array) => btoa(String.fromCharCode(...bytes)).replace(/=/g,'').replace(/\+/g,'-').replace(/\//g,'_');
@@ -22,6 +22,12 @@ async function googleToken() {
   return (await response.json()).access_token as string;
 }
 const roomNames:Record<string,string>={a:'木地板 A',b:'木地板 B',stars:'群星室',e:'E 化教室'};
+function calendarForRoom(roomId:string, main:string, stars:string, e:string){
+  if(roomId==='a'||roomId==='b')return main;
+  if(roomId==='stars')return stars;
+  if(roomId==='e')return e;
+  throw Error('Unknown booking room: '+roomId);
+}
 function eventId(id:string){return 'hillside'+id.replace(/-/g,'').toLowerCase();} // deterministic; avoids duplicates after retries
 async function googleRequest(token:string,calendar:string,method:string,path:string,body?:unknown){
   const response=await fetch('https://www.googleapis.com/calendar/v3/calendars/'+encodeURIComponent(calendar)+'/events'+path,{
@@ -36,8 +42,9 @@ Deno.serve(async req=>{
   if(req.method!=='POST')return new Response('Method not allowed',{status:405});
   const secret=Deno.env.get('CALENDAR_SYNC_SECRET');
   if(!secret||req.headers.get('x-calendar-sync-secret')!==secret)return new Response('Unauthorized',{status:401});
-  const url=Deno.env.get('SUPABASE_URL'),service=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),calendar=Deno.env.get('GOOGLE_CALENDAR_ID');
-  if(!url||!service||!calendar)return new Response('Missing server configuration',{status:500});
+  const url=Deno.env.get('SUPABASE_URL'),service=Deno.env.get('SUPABASE_SERVICE_ROLE_KEY'),calendar=Deno.env.get('GOOGLE_CALENDAR_ID'),starsCalendar=Deno.env.get('GOOGLE_CALENDAR_STARS_ID'),eCalendar=Deno.env.get('GOOGLE_CALENDAR_E_ID');
+  if(!url||!service||!calendar||!starsCalendar||!eCalendar)return new Response('Missing server configuration',{status:500});
+  if(new Set([calendar,starsCalendar,eCalendar]).size!==3)return new Response('Calendar IDs must be distinct',{status:500});
   const db=createClient(url,service,{auth:{persistSession:false}});
   const {data:jobs,error}=await db.rpc('claim_booking_calendar_sync',{p_limit:10});
   if(error)return new Response('Claim failed: '+error.message,{status:500});
@@ -48,14 +55,15 @@ Deno.serve(async req=>{
   for(const job of jobs){
     const id=job.google_event_id||eventId(job.booking_id);
     try{
+      const targetCalendar=calendarForRoom(job.room_id,calendar,starsCalendar,eCalendar);
       if(job.desired_state==='create'){
         const event={id,summary:'山居學習中心｜'+(roomNames[job.room_id]||job.room_id)+'｜'+job.activity_name,
           description:'山居學習中心場地借用（核准）\n預約編號：'+job.booking_id,
           start:{dateTime:job.start_at,timeZone:'Asia/Taipei'},end:{dateTime:job.end_at,timeZone:'Asia/Taipei'}};
-        try{await googleRequest(token,calendar,'POST','',event);}
+        try{await googleRequest(token,targetCalendar,'POST','',event);}
         catch(e){if((e as {status?:number}).status!==409)throw e;}
       }else{
-        try{await googleRequest(token,calendar,'DELETE','/'+encodeURIComponent(id));}
+        try{await googleRequest(token,targetCalendar,'DELETE','/'+encodeURIComponent(id));}
         catch(e){if((e as {status?:number}).status!==404 && (e as {status?:number}).status!==410)throw e;}
       }
       const {error}=await db.rpc('complete_booking_calendar_sync',{p_booking_id:job.booking_id,p_desired_state:job.desired_state,p_event_id:job.desired_state==='create'?id:null,p_error:null});
