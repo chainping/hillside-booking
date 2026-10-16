@@ -1,6 +1,6 @@
 <!doctype html><html lang="zh-Hant"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>山居學習中心｜管理後台</title><link rel="stylesheet" href="live.css"><link rel="stylesheet" href="admin-live.css"></head><body>
 <header><a href="index.html" class="brand">山居學習中心 <small>NCCU · HILLSIDE</small></a><nav><a href="booking-live.html">學生預約頁</a><a href="#requests">申請審核</a><a href="#overview">場地概況</a><a href="#room-blocks">場地停用</a></nav></header>
-<main><div class="warning">管理提醒：審核及場地停用操作會直接修改正式資料庫。核准預約將排入 Google 日曆同步佇列；請確認資料後再操作。</div>
+<main><div class="warning">管理提醒：審核及場地停用操作會直接修改正式資料庫。Google 日曆同步與通知寄送仍須另行確認；請確認資料後再操作。</div>
 <section class="admin-top"><p class="eyebrow">HILLSIDE · ADMINISTRATION</p><h1>場地借用管理</h1><p class="muted">僅授權管理員可查看申請人的個人資料。請勿在公共電腦使用此頁。</p><div id="authStatus" class="status" role="status">正在確認登入狀態…</div><div class="actions"><button id="login" type="button" hidden>使用政大 Google 登入</button><button id="logout" type="button" class="outline" hidden>登出</button><button id="refresh" type="button" class="outline" hidden>重新讀取申請</button></div></section>
 <div id="adminContent" hidden>
 <section id="overview"><h2>申請概況</h2><div id="summary" class="summary-grid"></div><p class="muted">顯示最近最多 500 筆申請；數字不代表全校歷史總數。</p></section>
