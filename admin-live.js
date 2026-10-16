@@ -527,6 +527,72 @@ async function loadBlocks() {
   }
 }
 
+// Batch all-room closure: database RPC validates conflicts atomically.
+$('batchBlockForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (!authorized) return;
+  const button = $('batchSubmit');
+  const status = $('batchStatus');
+  const kind = $('batchType').value;
+  const note = $('batchNote').value.trim();
+  const start = $('batchStart').value;
+  const end = $('batchEnd').value;
+  const allowed = ['寒假閉館', '暑假閉館', '臨時閉館', '其他全館停用'];
+  if (!allowed.includes(kind)) {
+    status.textContent = '請選擇有效的閉館類型。';
+    return;
+  }
+  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(start) ||
+      !/^\\d{4}-\\d{2}-\\d{2}$/.test(end) || end < start) {
+    status.textContent = '請確認開始及結束日期，結束日期不可早於開始日期。';
+    return;
+  }
+  const reason = note ? kind + '｜' + note : kind;
+  if (reason.length > 300) {
+    status.textContent = '閉館原因過長，請縮短補充說明。';
+    return;
+  }
+  if (!confirm(
+    '確定設定全部四個場地閉館？\\n\\n' +
+    '類型：' + kind + '\\n' +
+    '日期：' + start + ' 至 ' + end + '（含結束日）\\n' +
+    '場地：木地板 A、木地板 B、群星室、E 化教室\\n' +
+    '原因：' + reason + '\\n\\n' +
+    '將立即寫入正式資料庫；如有預約或活動衝突，整批不會建立。'
+  )) return;
+  button.disabled = true;
+  status.textContent = '正在檢查衝突並建立全館閉館紀錄…';
+  try {
+    const { data, error } = await db.rpc('create_all_room_blocks', {
+      p_start_date: start,
+      p_end_date: end,
+      p_reason: reason
+    });
+    if (error) throw error;
+    const ids = Array.isArray(data) ? data : [];
+    status.textContent = '全館閉館已建立，共 ' + ids.length + ' 筆場地紀錄。';
+    $('batchBlockForm').reset();
+    await loadBlocks();
+    status.textContent = '全館閉館已建立，共 ' + ids.length + ' 筆場地紀錄。請至學生端日曆確認。';
+  } catch (error) {
+    const raw = error?.message || String(error);
+    const readable = raw.includes('Conflicts with approved booking')
+      ? '所選期間已有核准預約，請先處理衝突預約。'
+      : raw.includes('Conflicts with external calendar event')
+      ? '所選期間與 Google Calendar 外部活動衝突，請先確認活動。'
+      : raw.includes('Conflicts with existing room block')
+      ? '所選期間已有場地停用紀錄，請先檢查現有設定。'
+      : raw.includes('Admin required')
+      ? '目前帳號沒有管理員權限。'
+      : raw.includes('Could not find the function')
+      ? '找不到批次閉館函式，請確認 Supabase SQL 已成功建立。'
+      : '設定失敗：' + raw;
+    status.textContent = readable + ' 本次未新增批次閉館紀錄。';
+  } finally {
+    button.disabled = false;
+  }
+});
+
 $('blockRefresh').onclick = loadBlocks;
 
 $('blockForm').addEventListener('submit', async event => {
@@ -556,7 +622,7 @@ $('blockForm').addEventListener('submit', async event => {
       `開始：${fmt(start)}\n` +
       `結束：${fmt(end)}\n` +
       `原因：${reason}\n\n` +
-      '將立即寫入正式資料庫，且目前沒有解除停用按鈕。'
+      '將立即寫入正式資料庫；可在停用紀錄中解除。'
     )) return;
 
     btn.disabled = true;
