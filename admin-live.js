@@ -542,8 +542,8 @@ $('batchBlockForm').addEventListener('submit', async event => {
     status.textContent = '請選擇有效的閉館類型。';
     return;
   }
-  if (!/^\\d{4}-\\d{2}-\\d{2}$/.test(start) ||
-      !/^\\d{4}-\\d{2}-\\d{2}$/.test(end) || end < start) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(start) ||
+      !/^\d{4}-\d{2}-\d{2}$/.test(end) || end < start) {
     status.textContent = '請確認開始及結束日期，結束日期不可早於開始日期。';
     return;
   }
@@ -553,11 +553,11 @@ $('batchBlockForm').addEventListener('submit', async event => {
     return;
   }
   if (!confirm(
-    '確定設定全部四個場地閉館？\\n\\n' +
-    '類型：' + kind + '\\n' +
-    '日期：' + start + ' 至 ' + end + '（含結束日）\\n' +
-    '場地：木地板 A、木地板 B、群星室、E 化教室\\n' +
-    '原因：' + reason + '\\n\\n' +
+    '確定設定全部四個場地閉館？\n\n' +
+    '類型：' + kind + '\n' +
+    '日期：' + start + ' 至 ' + end + '（含結束日）\n' +
+    '場地：木地板 A、木地板 B、群星室、E 化教室\n' +
+    '原因：' + reason + '\n\n' +
     '將立即寫入正式資料庫；如有預約或活動衝突，整批不會建立。'
   )) return;
   button.disabled = true;
